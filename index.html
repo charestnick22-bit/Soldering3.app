@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Realistic Soldering Workbench & Free-Roam Simulator</title>
+  <style>
+    :root {
+      --bg: #14171a;
+      --panel: #1e2227;
+      --accent: #ff9900;
+      --glow: rgba(255, 153, 0, 0.4);
+      --dark-glow: rgba(0, 0, 0, 0.7);
+      --lcd-bg: #09120a;
+      --lcd-text: #33ff66;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; touch-action: none; }
+    body {
+      background: var(--bg);
+      color: #eee;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      background: linear-gradient(180deg, #2b3036, #16191c);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 12px var(--dark-glow);
+      border-bottom: 2px solid #333;
+      z-index: 10;
+    }
+
+    .title-box h1 { font-size: 1.3rem; color: var(--accent); text-shadow: 0 0 8px var(--glow); }
+    .stats-bar { display: flex; gap: 12px; font-weight: bold; font-size: 0.9rem; }
+    .stat-pill { background: #0e1012; padding: 5px 12px; border-radius: 12px; border: 1px solid #444; color: #ffcc00; }
+
+    nav {
+      background: #1a1d21;
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+      padding: 6px 0;
+      border-bottom: 1px solid #333;
+      z-index: 10;
+    }
+
+    .tab-btn {
+      background: linear-gradient(180deg, #3d4248, #22252a);
+      color: #ccc;
+      border: 1px solid #4c525a;
+      padding: 7px 16px;
+      font-weight: bold;
+      font-size: 0.85rem;
+      border-radius: 4px 4px 0 0;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: linear-gradient(180deg, #ff9900, #cc7a00);
+      color: #000;
+      border-color: #ffaa22;
+      box-shadow: 0 0 10px rgba(255, 153, 0, 0.5);
+    }
+
+    main { flex: 1; padding: 10px; display: flex; justify-content: center; align-items: stretch; position: relative; }
+    .page-tab { display: none; width: 100%; max-width: 1300px; }
+    .page-tab.active { display: flex; flex-direction: column; }
+
+    .workstation-container {
+      background: var(--panel);
+      border: 3px solid #3a3f46;
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: inset 0 0 20px #000, 0 10px 25px rgba(0,0,0,0.7);
+      position: relative;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .workstation-container.fullscreen {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 9999;
+      border-radius: 0;
+      padding: 8px;
+      background: #0a0c0e;
+    }
+
+    .ws-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .btn {
+      background: linear-gradient(180deg, #4c525a, #2b2f35);
+      color: #fff;
+      border: 1px solid #5c636d;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 0.85rem;
+    }
+    .btn:hover { background: #5c636d; }
+    .btn-fs { background: linear-gradient(180deg, #0077bb, #004477); border-color: #0099ff; }
+    .btn-audit { background: linear-gradient(180deg, #009933, #004416); border-color: #00cc44; }
+    .btn-pip { background: linear-gradient(180deg, #8844cc, #442266); border-color: #aa66ff; }
+    .btn-active { background: linear-gradient(180deg, #00cc44, #006622) !important; border-color: #00ff66 !important; }
+
+    .canvas-wrapper {
+      position: relative;
+      width: 100%;
+      flex: 1;
+      min-height: 480px;
+      background: #060a0f;
+      border: 2px solid #333;
+      border-radius: 4px;
+      overflow: hidden;
+      box-shadow: inset 0 0 35px #000;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: crosshair;
+    }
+
+    .lcd-hud {
+      position: absolute;
+      top: 10px; right: 10px;
+      background: linear-gradient(180deg, #0b1c0f, #040a06);
+      border: 2px solid #1f4d29;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      color: var(--lcd-text);
+      font-size: 0.85rem;
+      pointer-events: none;
+      box-shadow: 0 0 10px rgba(51,255,102,0.2), inset 0 0 6px #000;
+      text-shadow: 0 0 4px #33ff66;
+    }
+
+    /* Picture-in-Picture Floating Window */
+    .pip-window {
+      position: absolute;
+      top: 60px; right: 20px;
+      width: 240px;
+      background: rgba(26, 30, 36, 0.92);
+      border: 2px solid #ff9900;
+      border-radius: 6px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.8);
+      z-index: 100;
+      display: none;
+      backdrop-filter: blur(4px);
+    }
+    .pip-header {
+      background: linear-gradient(180deg, #3d4248, #22252a);
+      padding: 6px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #444;
+      cursor: move;
+      font-size: 0.8rem;
+      font-weight: bold;
+      color: var(--accent);
+    }
+    .pip-body {
+      padding: 10px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.8rem;
+      color: #33ff66;
+      line-height: 1.4;
+    }
+
+    .tool-bar {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      overflow-x: auto;
+      padding: 4px 0;
+    }
+    .tool-btn {
+      background: linear-gradient(180deg, #2b3036, #16191c);
+      border: 2px solid #444;
+      color: #aaa;
+      padding: 7px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    .tool-btn.active { border-color: var(--accent); color: var(--accent); background: #33281c; box-shadow: 0 0 8px var(--glow); }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid #3c424a;
+      padding: 16px;
+      border-radius: 6px;
+      text-align: center;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+    .card h3 { color: var(--accent); margin-bottom: 6px; font-size: 1.05rem; }
+    .card p { font-size: 0.85rem; color: #bbb; line-height: 1.3; }
+    .trophy-card { border-color: #554400; background: linear-gradient(180deg, #252214, #14120a); }
+    .trophy-card.unlocked { border-color: #ffcc00; box-shadow: 0 0 12px rgba(255,204,0,0.3); }
+    .trophy-icon { font-size: 2.2rem; margin-bottom: 6px; opacity: 0.2; }
+    .trophy-card.unlocked .trophy-icon { opacity: 1; filter: drop-shadow(0 0 8px #ffcc00); }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 10000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background: var(--panel);
+      border: 2px solid var(--accent);
+      padding: 22px;
+      border-radius: 8px;
+      max-width: 400px;
+      text-align: center;
+      box-shadow: 0 0 25px var(--glow);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title-box"><h1>Realistic Soldering Workbench & Free-Roam Simulator</h1></div>
+    <div class="stats-bar">
+      <div class="stat-pill">XP: <span id="xp-val">0</span></div>
+      <div class="stat-pill">Cash: $<span id="cash-val">75</span></div>
+    </div>
+  </header>
+
+  <nav>
+    <button class="tab-btn active" onclick="switchTab('tab-ws')">Workbench</button>
+    <button class="tab-btn" onclick="switchTab('tab-tutorial')">Tutorial</button>
+    <button class="tab-btn" onclick="switchTab('tab-career')">Missions (10)</button>
+    <button class="tab-btn" onclick="switchTab('tab-shop')">Shop</button>
+    <button class="tab-btn" onclick="switchTab('tab-trophies')">Trophy Room</button>
+  </nav>
+
+  <main>
+    <!-- WORKBENCH TAB -->
+    <div id="tab-ws" class="page-tab active">
+      <div class="workstation-container" id="ws-container">
+        <div class="ws-controls">
+          <div>
+            <span style="font-weight:bold; color:var(--accent); font-size:0.95rem;" id="mode-title">Free Roam / Sandbox Workbench</span>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <button class="btn" id="pan-mode-btn" onclick="togglePanMode()">Pan Tool (Off)</button>
+            <button class="btn btn-pip" onclick="togglePiP()">PiP Telemetry</button>
+            <button class="btn btn-fs" onclick="toggleFullscreen()">Fullscreen</button>
+            <button class="btn btn-audit" onclick="inspectAndAudit()">Audit Joint</button>
+          </div>
+        </div>
+
+        <div class="canvas-wrapper">
+          <canvas id="solderCanvas"></canvas>
+          <div class="lcd-hud">
+            <div>TIP TEMP: <span id="hud-temp">350</span>°C</div>
+            <div>PAD TEMP: <span id="hud-pad">25</span>°C</div>
+            <div>STATE: <span id="hud-state" style="color:#aaa;">SOLID</span></div>
+            <div>ZOOM: <span id="hud-zoom">1.0</span>x</div>
+          </div>
+
+          <!-- Floating PiP Window -->
+          <div class="pip-window" id="pip-window">
+            <div class="pip-header" id="pip-header">
+              <span>Live Telemetry PiP</span>
+              <span style="cursor:pointer;" onclick="togglePiP()">[X]</span>
+            </div>
+            <div class="pip-body" id="pip-body">
+              <div>PAD: ACTIVE</div>
+              <div>MASS: 0.0g</div>
+              <div>FLUX: 100%</div>
+              <div>OXID: 0.0%</div>
+              <div>STATUS: READY</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-bar">
+          <button class="tool-btn active" id="tool-iron" onclick="selectTool('iron')">Soldering Iron</button>
+          <button class="tool-btn" id="tool-solder" onclick="selectTool('solder')">Solder Wire</button>
+          <button class="tool-btn" id="tool-flux" onclick="selectTool('flux')">Flux Pen</button>
+          <button class="tool-btn" id="tool-hotair" onclick="selectTool('hotair')">Hot Air Station</button>
+          <button class="tool-btn" id="tool-wick" onclick="selectTool('wick')">Desoldering Wick</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TUTORIAL TAB -->
+    <div id="tab-tutorial" class="page-tab">
+      <h2 style="margin-bottom:12px; color:var(--accent);">Interactive Soldering Tutorial</h2>
+      <div class="card" style="text-align:left; max-width:580px; margin:0 auto;">
+        <h3 style="margin-bottom:8px;">Step 1: Flux & Thermal Prep</h3>
+        <p style="margin-bottom:12px;">Apply flux to the copper pad to prevent oxidation. Place your iron tip on both the component pin and pad until temperature reaches 220°C+.</p>
+        <h3 style="margin-bottom:8px;">Step 2: Solder Wire Wetting & Fillet</h3>
+        <p style="margin-bottom:12px;">Feed solder wire into the joint. Watch surface tension pull molten metal into a clean, concave fillet.</p>
+        <button class="btn" onclick="completeTutorial()" style="margin-top:6px;">Complete Tutorial & Claim Rewards</button>
+      </div>
+    </div>
+
+    <!-- CAREER TAB (10 MISSIONS) -->
+    <div id="tab-career" class="page-tab">
+      <h2 style="margin-bottom:12px; color:var(--accent);">Professional Career Missions</h2>
+      <div class="grid" style="max-height: 72vh; overflow-y: auto; padding-right: 5px;">
+        <div class="card"><h3>1. Through-Hole DIP Pin</h3><p>Standard resistor/IC lead joint forming.</p><br><button class="btn" onclick="startMission(1)">Start Mission</button></div>
+        <div class="card"><h3>2. SMD 0805 Resistor</h3><p>Precision surface-mount component tacking.</p><br><button class="btn" onclick="startMission(2)">Start Mission</button></div>
+        <div class="card"><h3>3. Western Union Wire Splice</h3><p>High-current stranded copper wire tinning.</p><br><button class="btn" onclick="startMission(3)">Start Mission</button></div>
+        <div class="card"><h3>4. Copper Foil Stained Seam</h3><p>Delicate stained glass copper foil soldering.</p><br><button class="btn" onclick="startMission(4)">Start Mission</button></div>
+        <div class="card"><h3>5. QFP IC Drag Soldering</h3><p>Multi-pin fine pitch integrated circuit bridge removal.</p><br><button class="btn" onclick="startMission(5)">Start Mission</button></div>
+        <div class="card"><h3>6. Power MOSFET Heatsink</h3><p>High thermal mass tab soldering and heat transfer.</p><br><button class="btn" onclick="startMission(6)">Start Mission</button></div>
+        <div class="card"><h3>7. Flexible Ribbon Cable</h3><p>Heat-sensitive plastic flex PCB trace repair.</p><br><button class="btn" onclick="startMission(7)">Start Mission</button></div>
+        <div class="card"><h3>8. Electrolytic Capacitor</h3><p>Polarized dual-pin through-hole desoldering & replacement.</p><br><button class="btn" onclick="startMission(8)">Start Mission</button></div>
+        <div class="card"><h3>9. BGA Ball Array Pad</h3><p>Micro-ball reflow using hot air station.</p><br><button class="btn" onclick="startMission(9)">Start Mission</button></div>
+        <div class="card"><h3>10. Master Motherboard Repair</h3><p>Complex multi-pad rework challenge under strict timing.</p><br><button class="btn" onclick="startMission(10)">Start Mission</button></div>
+      </div>
+    </div>
+
+    <!-- SHOP TAB -->
+    <div id="tab-shop" class="page-tab">
+      <h2 style="margin-bottom:12px; color:var(--accent);">Workbench Equipment Upgrades</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Golden Precision Tip</h3>
+          <p>Enhanced thermal recovery and anti-oxidation coating.</p>
+          <p style="margin:8px 0; font-weight:bold; color:#ffcc00;">$100</p>
+          <button class="btn" id="buy-gold-tip" onclick="buyItem('goldTip', 100)">Purchase</button>
+        </div>
+        <div class="card">
+          <h3>PID Micro-Processor Station</h3>
+          <p>Lightning-fast temperature response under load.</p>
+          <p style="margin:8px 0; font-weight:bold; color:#ffcc00;">$150</p>
+          <button class="btn" id="buy-pid" onclick="buyItem('pid', 150)">Purchase</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TROPHIES TAB -->
+    <div id="tab-trophies" class="page-tab">
+      <h2 style="margin-bottom:12px; color:var(--accent);">Achievement Showcase</h2>
+      <div class="grid">
+        <div class="card trophy-card" id="trophy-1">
+          <div class="trophy-icon">🏆</div>
+          <h3>Tutorial Graduate</h3>
+          <p>Complete basic workstation training.</p>
+        </div>
+        <div class="card trophy-card" id="trophy-2">
+          <div class="trophy-icon">⭐</div>
+          <h3>Precision Master</h3>
+          <p>Solder a joint with high thermal accuracy.</p>
+        </div>
+        <div class="card trophy-card" id="trophy-3">
+          <div class="trophy-icon">👑</div>
+          <h3>Tool Collector</h3>
+          <p>Unlock custom workshop equipment.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div class="modal" id="audit-modal">
+    <div class="modal-content">
+      <h2 style="color:var(--accent); margin-bottom:10px;">Joint Quality Audit</h2>
+      <p id="audit-rating" style="font-size:1.4rem; font-weight:bold; margin-bottom:10px;">⭐⭐⭐</p>
+      <p id="audit-feedback" style="margin-bottom:15px; text-align:left; line-height:1.4;"></p>
+      <button class="btn" onclick="closeAudit()">Continue</button>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      xp: 0,
+      cash: 75,
+      activeTool: 'iron',
+      activeTab: 'tab-ws',
+      items: { goldTip: false, pid: false },
+      trophies: { tut: false, precision: false, collector: false },
+      pointer: { x: 0, y: 0, down: false, pressure: 0.5 },
+      viewport: { offsetX: 0, offsetY: 0, zoom: 1.0, isPanning: false, panStart: { x: 0, y: 0 } },
+      panToolActive: false,
+      pipVisible: false
+    };
+
+    const canvas = document.getElementById('solderCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const particles = [];
+    for (let i = 0; i < 250; i++) {
+      particles.push({ x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 30, size: 3, color: 'rgba(200, 210, 220, 0.4)', active: false });
+    }
+
+    const pads = [
+      { x: 320, y: 260, r: 35, temp: 25, flux: 0, oxidation: 0, solderMass: 0, liquidRatio: 0, nodes: Array.from({ length: 16 }, () => ({ r: 0, targetR: 0, vel: 0 })) },
+      { x: 560, y: 260, r: 35, temp: 25, flux: 0, oxidation: 0, solderMass: 0, liquidRatio: 0, nodes: Array.from({ length: 16 }, () => ({ r: 0, targetR: 0, vel: 0 })) }
+    ];
+
+    window.addEventListener('resize', resizeCanvas);
+    setTimeout(resizeCanvas, 100);
+
+    // Pan & Zoom Event Handlers
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.88;
+      state.viewport.zoom = Math.min(Math.max(0.4, state.viewport.zoom * zoomFactor), 3.5);
+      document.getElementById('hud-zoom').innerText = state.viewport.zoom.toFixed(2);
+    }, { passive: false });
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (state.panToolActive || e.button === 1 || e.shiftKey) {
+        state.viewport.isPanning = true;
+        state.viewport.panStart = { x: e.clientX - state.viewport.offsetX, y: e.clientY - state.viewport.offsetY };
+      } else {
+        state.pointer.down = true;
+        updatePointer(e);
+      }
+      e.preventDefault();
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (state.viewport.isPanning) {
+        state.viewport.offsetX = e.clientX - state.viewport.panStart.x;
+        state.viewport.offsetY = e.clientY - state.viewport.panStart.y;
+      } else {
+        updatePointer(e);
+      }
+      e.preventDefault();
+    });
+
+    canvas.addEventListener('pointerup', () => {
+      state.pointer.down = false;
+      state.viewport.isPanning = false;
+    });
+
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    }
+
+    function togglePanMode() {
+      state.panToolActive = !state.panToolActive;
+      const btn = document.getElementById('pan-mode-btn');
+      btn.innerText = state.panToolActive ? 'Pan Tool (ON)' : 'Pan Tool (Off)';
+      btn.classList.toggle('btn-active', state.panToolActive);
+    }
+
+    function togglePiP() {
+      state.pipVisible = !state.pipVisible;
+      document.getElementById('pip-window').style.display = state.pipVisible ? 'block' : 'none';
+    }
+
+    // PiP Dragging support
+    const pipWin = document.getElementById('pip-window');
+    const pipHeader = document.getElementById('pip-header');
+    let isDraggingPip = false, pipStartX = 0, pipStartY = 0;
+
+    pipHeader.addEventListener('pointerdown', (e) => {
+      isDraggingPip = true;
+      pipStartX = e.clientX - pipWin.offsetLeft;
+      pipStartY = e.clientY - pipWin.offsetTop;
+      e.preventDefault();
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (isDraggingPip) {
+        pipWin.style.left = (e.clientX - pipStartX) + 'px';
+        pipWin.style.top = (e.clientY - pipStartY) + 'px';
+      }
+    });
+    window.addEventListener('pointerup', () => { isDraggingPip = false; });
+
+    function updatePointer(e) {
+      const rect = canvas.getBoundingClientRect();
+      let clientX = e.clientX, clientY = e.clientY, pressure = 0.5;
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX; clientY = e.touches[0].clientY;
+        if (e.touches[0].force !== undefined && e.touches[0].force > 0) pressure = e.touches[0].force;
+      }
+      if (e.pressure !== undefined && e.pressure > 0) pressure = e.pressure;
+
+      const screenX = clientX - rect.left;
+      const screenY = clientY - rect.top;
+
+      state.pointer.x = (screenX - state.viewport.offsetX) / state.viewport.zoom;
+      state.pointer.y = (screenY - state.viewport.offsetY) / state.viewport.zoom;
+      state.pointer.pressure = pressure;
+    }
+
+    function toggleFullscreen() {
+      const ws = document.getElementById('ws-container');
+      if (!document.fullscreenElement) {
+        if (ws.requestFullscreen) ws.requestFullscreen();
+        ws.classList.add('fullscreen');
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+        ws.classList.remove('fullscreen');
+      }
+      setTimeout(resizeCanvas, 150);
+    }
+
+    function spawnSmoke(x, y, isSpark = false) {
+      for (let i = 0; i < (isSpark ? 4 : 2); i++) {
+        const p = particles.find(p => !p.active);
+        if (p) {
+          p.active = true;
+          p.x = x + (Math.random() - 0.5) * 10;
+          p.y = y + (Math.random() - 0.5) * 10;
+          p.vx = (Math.random() - 0.5) * (isSpark ? 3.5 : 1.2);
+          p.vy = isSpark ? (Math.random() - 0.5) * 3.5 : -Math.random() * 2 - 0.6;
+          p.life = 0;
+          p.maxLife = isSpark ? 15 + Math.random() * 15 : 30 + Math.random() * 30;
+          p.size = isSpark ? 2 + Math.random() * 2 : 3 + Math.random() * 5;
+          p.color = isSpark ? '#ffaa00' : 'rgba(210, 220, 230, 0.4)';
+        }
+      }
+    }
+
+    function render() {
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.translate(state.viewport.offsetX, state.viewport.offsetY);
+      ctx.scale(state.viewport.zoom, state.viewport.zoom);
+
+      // Realistic PCB Green Board Texture
+      ctx.fillStyle = '#0a2912';
+      ctx.fillRect(-1500, -1500, 4000, 4000);
+
+      // Copper Trace Lines
+      ctx.strokeStyle = '#12451f';
+      ctx.lineWidth = 18;
+      ctx.beginPath();
+      ctx.moveTo(pads[0].x, pads[0].y);
+      ctx.lineTo(pads[1].x, pads[1].y);
+      ctx.stroke();
+
+      pads.forEach((pad, index) => {
+        if (pad.temp > 25) pad.temp -= 0.3;
+
+        if (pad.temp >= 220) {
+          pad.liquidRatio = Math.min(1.0, pad.liquidRatio + 0.08);
+        } else {
+          pad.liquidRatio = Math.max(0.0, pad.liquidRatio - 0.04);
+        }
+
+        if (pad.flux > 0) {
+          pad.flux = Math.max(0, pad.flux - (pad.temp > 200 ? 0.08 : 0.02));
+        } else if (pad.temp > 320) {
+          pad.oxidation = Math.min(100, pad.oxidation + 0.1);
+        }
+
+        if (state.pointer.down && !state.viewport.isPanning) {
+          const dist = Math.hypot(state.pointer.x - pad.x, state.pointer.y - pad.y);
+          if (dist < pad.r + 15) {
+            const pFactor = 0.5 + state.pointer.pressure;
+
+            if (state.activeTool === 'iron') {
+              const heatSpeed = state.items.pid ? 5.5 : 3.4;
+              pad.temp = Math.min(420, pad.temp + heatSpeed * pFactor);
+              if (pad.temp > 200) spawnSmoke(pad.x, pad.y);
+            } else if (state.activeTool === 'hotair') {
+              pad.temp = Math.min(380, pad.temp + 2.8 * pFactor);
+            } else if (state.activeTool === 'solder' && pad.temp > 220) {
+              pad.solderMass = Math.min(100, pad.solderMass + 2.0 * pFactor);
+              if (pad.flux > 0) spawnSmoke(pad.x, pad.y, true);
+            } else if (state.activeTool === 'flux') {
+              pad.flux = Math.min(100, pad.flux + 3.0 * pFactor);
+              pad.oxidation = Math.max(0, pad.oxidation - 2.0);
+            } else if (state.activeTool === 'wick' && pad.temp > 200) {
+              pad.solderMass = Math.max(0, pad.solderMass - 3.0 * pFactor);
+              spawnSmoke(pad.x, pad.y);
+            }
+          }
+        }
+
+        // Draw PCB Pad
+        ctx.fillStyle = pad.temp > 180 ? '#ff9933' : '#c87a2b';
+        ctx.beginPath();
+        ctx.arc(pad.x, pad.y, pad.r, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (pad.flux > 0) {
+          ctx.fillStyle = `rgba(255, 190, 0, ${0.15 + (pad.flux / 100) * 0.3})`;
+          ctx.beginPath();
+          ctx.arc(pad.x, pad.y, pad.r * 1.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Fluid Solder Blob Surface Tension
+        if (pad.solderMass > 0) {
+          const baseRadius = pad.r * (pad.solderMass / 100);
+          const isLiquid = pad.liquidRatio > 0.3;
+
+          pad.nodes.forEach((node, i) => {
+            const angle = (i / pad.nodes.length) * Math.PI * 2;
+            let target = baseRadius;
+            if (isLiquid) {
+              const tensionPull = Math.sin(angle * 2) * 2.5 * pad.liquidRatio;
+              target = baseRadius + tensionPull;
+              const force = (target - node.r) * 0.15;
+              node.vel = (node.vel + force) * 0.75;
+              node.r += node.vel;
+            } else {
+              node.r = baseRadius;
+            }
+          });
+
+          ctx.beginPath();
+          pad.nodes.forEach((node, i) => {
+            const angle = (i / pad.nodes.length) * Math.PI * 2;
+            const nx = pad.x + Math.cos(angle) * Math.max(6, node.r);
+            const ny = pad.y + Math.sin(angle) * Math.max(6, node.r);
+            if (i === 0) ctx.moveTo(nx, ny);
+            else ctx.lineTo(nx, ny);
+          });
+          ctx.closePath();
+
+          if (pad.oxidation > 40) ctx.fillStyle = '#665d58';
+          else if (isLiquid) ctx.fillStyle = '#f2f2f2';
+          else ctx.fillStyle = '#b0b5ba';
+          ctx.fill();
+
+          if (isLiquid || pad.oxidation < 30) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.beginPath();
+            ctx.arc(pad.x - baseRadius * 0.3, pad.y - baseRadius * 0.3, Math.max(2, baseRadius * 0.25), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // Through-Hole Pin
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(pad.x, pad.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      particles.forEach(p => {
+        if (p.active) {
+          p.x += p.vx; p.y += p.vy; p.life++;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          if (p.life >= p.maxLife) p.active = false;
+        }
+      });
+
+      // Tool Cursor Sprites
+      if (state.pointer.x > 0 && state.pointer.y > 0) {
+        ctx.save();
+        ctx.translate(state.pointer.x, state.pointer.y);
+        if (state.activeTool === 'iron') {
+          ctx.fillStyle = (state.items.goldTip || state.trophies.tut) ? '#ffcc00' : '#888888';
+          ctx.beginPath();
+          ctx.moveTo(0, 0); ctx.lineTo(-18, -45); ctx.lineTo(-6, -50); ctx.fill();
+        } else if (state.activeTool === 'solder') {
+          ctx.strokeStyle = '#dddddd'; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-25, -35); ctx.stroke();
+        } else if (state.activeTool === 'flux') {
+          ctx.fillStyle = '#ff9900'; ctx.fillRect(-4, -28, 8, 28);
+        } else if (state.activeTool === 'wick') {
+          ctx.fillStyle = '#cc7733'; ctx.fillRect(-6, -30, 12, 30);
+        } else if (state.activeTool === 'hotair') {
+          ctx.fillStyle = '#555'; ctx.fillRect(-8, -35, 16, 35);
+        }
+        ctx.restore();
+      }
+
+      ctx.restore();
+
+      // HUD & PiP Updates
+      document.getElementById('hud-pad').innerText = Math.round(pads[0].temp);
+      const stateElem = document.getElementById('hud-state');
+      if (pads[0].liquidRatio > 0.3) {
+        stateElem.innerText = 'MOLTEN'; stateElem.style.color = '#ff9900';
+      } else {
+        stateElem.innerText = 'SOLID'; stateElem.style.color = '#aaa';
+      }
+
+      if (state.pipVisible) {
+        document.getElementById('pip-body').innerHTML = `
+          <div>PAD: ${Math.round(pads[0].temp)}°C</div>
+          <div>MASS: ${pads[0].solderMass.toFixed(1)}g</div>
+          <div>FLUX: ${Math.round(pads[0].flux)}%</div>
+          <div>OXID: ${Math.round(pads[0].oxidation)}%</div>
+          <div>STATE: ${pads[0].liquidRatio > 0.3 ? 'MOLTEN' : 'SOLID'}</div>
+        `;
+      }
+
+      requestAnimationFrame(render);
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.page-tab').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      event.target.classList.add('active');
+      state.activeTab = tabId;
+      if (tabId === 'tab-ws') setTimeout(resizeCanvas, 50);
+    }
+
+    function selectTool(tool) {
+      state.activeTool = tool;
+      document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(`tool-${tool}`).classList.add('active');
+    }
+
+    function buyItem(item, cost) {
+      if (state.cash >= cost && !state.items[item]) {
+        state.cash -= cost; state.items[item] = true;
+        document.getElementById('cash-val').innerText = state.cash;
+        const btn = document.getElementById(`buy-${item === 'goldTip' ? 'gold-tip' : 'pid'}`);
+        btn.innerText = 'Owned'; btn.disabled = true;
+        unlockTrophy('trophy-3');
+      }
+    }
+
+    function completeTutorial() {
+      if (!state.trophies.tut) {
+        state.trophies.tut = true; state.items.goldTip = true;
+        state.xp += 100; state.cash += 50;
+        document.getElementById('xp-val').innerText = state.xp;
+        document.getElementById('cash-val').innerText = state.cash;
+        unlockTrophy('trophy-1');
+      }
+      switchTab('tab-ws');
+    }
+
+    function unlockTrophy(trophyId) {
+      const card = document.getElementById(trophyId);
+      if (card) card.classList.add('unlocked');
+    }
+
+    function startMission(id) {
+      switchTab('tab-ws');
+      document.querySelectorAll('.tab-btn')[0].classList.add('active');
+      document.getElementById('mode-title').innerText = `Career Mission ${id} Active`;
+      pads.forEach(p => { p.solderMass = 0; p.temp = 25; p.flux = 0; p.oxidation = 0; });
+    }
+
+    function inspectAndAudit() {
+      const modal = document.getElementById('audit-modal');
+      const rating = document.getElementById('audit-rating');
+      const feedback = document.getElementById('audit-feedback');
+      let solderCoverage = pads.reduce((acc, p) => acc + p.solderMass, 0) / pads.length;
+      let ox = pads[0].oxidation;
+
+      if (solderCoverage > 40 && ox < 20) {
+        rating.innerText = '⭐⭐⭐';
+        feedback.innerText = 'Perfect Joint! Smooth concave fillet formed under solid surface tension without oxidation.';
+        unlockTrophy('trophy-2');
+      } else if (solderCoverage > 15) {
+        rating.innerText = '⭐⭐';
+        feedback.innerText = 'Acceptable joint. Add slightly more solder wire or flux to improve wetting surface tension.';
+      } else {
+        rating.innerText = '⭐';
+        feedback.innerText = 'Insufficient solder deposit or cold joint. Preheat copper pad past 220°C before feeding wire!';
+      }
+      modal.style.display = 'flex';
+    }
+
+    function closeAudit() {
+      document.getElementById('audit-modal').style.display = 'none';
+    }
+
+    render();
+    unlockTrophy('trophy-1');
+  </script>
+</body>
+</html>
+
